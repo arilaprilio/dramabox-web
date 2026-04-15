@@ -7,12 +7,14 @@ const PlyrVideo = dynamic(() => import("plyr-react").then((m) => m.Plyr), {
   ssr: false,
 });
 
-export default function VideoPlayer({ title, sources, onPlaybackError }) {
+export default function VideoPlayer({ title, sources, onPlaybackError, onEnded }) {
   const hostRef = useRef(null);
+  const frameRef = useRef(null);
   const [selectedQuality, setSelectedQuality] = useState(null);
   const [isSwitching, setIsSwitching] = useState(false);
   const [resume, setResume] = useState(null);
   const [aspectRatio, setAspectRatio] = useState("16 / 9");
+  const lastTapRef = useRef({ time: 0, x: 0 });
 
   const sorted = useMemo(() => {
     const safe = Array.isArray(sources) ? sources : [];
@@ -24,6 +26,137 @@ export default function VideoPlayer({ title, sources, onPlaybackError }) {
     const chosen = selectedQuality ?? sorted[0].quality;
     return sorted.find((s) => s.quality === chosen) || sorted[0];
   }, [sorted, selectedQuality]);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+
+    const SEEK_SECONDS = 5;
+
+    const getVideo = () => frame.querySelector("video");
+
+    const seek = (delta) => {
+      const video = getVideo();
+      if (!video) return;
+      const duration = Number.isFinite(video.duration) ? video.duration : null;
+      const next = (video.currentTime || 0) + delta;
+      const clamped =
+        duration == null
+          ? Math.max(0, next)
+          : Math.min(duration, Math.max(0, next));
+      video.currentTime = clamped;
+    };
+
+    const onDblClickCapture = (e) => {
+      try {
+        const rect = frame.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const isLeft = x < rect.width / 2;
+        e.preventDefault();
+        e.stopPropagation();
+        seek(isLeft ? -SEEK_SECONDS : SEEK_SECONDS);
+      } catch {
+        // ignore
+      }
+    };
+
+    const onTouchEndCapture = (e) => {
+      // Fallback untuk mobile: double-tap kiri/kanan = seek 5 detik
+      const touch = e.changedTouches?.[0];
+      if (!touch) return;
+
+      const now = Date.now();
+      const last = lastTapRef.current;
+      const within = now - last.time <= 300;
+      const near = Math.abs(touch.clientX - last.x) <= 80;
+
+      if (within && near) {
+        try {
+          const rect = frame.getBoundingClientRect();
+          const x = touch.clientX - rect.left;
+          const isLeft = x < rect.width / 2;
+          e.preventDefault();
+          e.stopPropagation();
+          seek(isLeft ? -SEEK_SECONDS : SEEK_SECONDS);
+        } catch {
+          // ignore
+        } finally {
+          lastTapRef.current = { time: 0, x: 0 };
+        }
+        return;
+      }
+
+      lastTapRef.current = { time: now, x: touch.clientX };
+    };
+
+    frame.addEventListener("dblclick", onDblClickCapture, true);
+    frame.addEventListener("touchend", onTouchEndCapture, {
+      capture: true,
+      passive: false,
+    });
+
+    return () => {
+      frame.removeEventListener("dblclick", onDblClickCapture, true);
+      frame.removeEventListener("touchend", onTouchEndCapture, true);
+    };
+  }, [selectedSource?.url]);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+
+    let currentVideo = null;
+    let endFired = false;
+    const fireEnded = () => {
+      if (endFired) return;
+      endFired = true;
+      onEnded?.();
+    };
+
+    const handleEnded = () => fireEnded();
+    const handlePause = () => {
+      const video = currentVideo;
+      if (!video) return;
+      if (video.ended) fireEnded();
+    };
+    const handlePlay = () => {
+      endFired = false;
+    };
+
+    const attachToActiveVideo = () => {
+      const video = frame.querySelector("video");
+      if (!video || video === currentVideo) return;
+
+      if (currentVideo) {
+        currentVideo.removeEventListener("ended", handleEnded);
+        currentVideo.removeEventListener("pause", handlePause);
+        currentVideo.removeEventListener("play", handlePlay);
+      }
+
+      currentVideo = video;
+      currentVideo.addEventListener("ended", handleEnded);
+      currentVideo.addEventListener("pause", handlePause);
+      currentVideo.addEventListener("play", handlePlay);
+    };
+
+    attachToActiveVideo();
+
+    const observer = new MutationObserver(() => {
+      // Plyr kadang mengganti node <video> internal.
+      attachToActiveVideo();
+    });
+    observer.observe(frame, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+      if (currentVideo) {
+        currentVideo.removeEventListener("ended", handleEnded);
+        currentVideo.removeEventListener("pause", handlePause);
+        currentVideo.removeEventListener("play", handlePlay);
+      }
+      currentVideo = null;
+    };
+  }, [selectedSource?.url, onEnded]);
 
   useEffect(() => {
     if (!sorted.length) return;
@@ -174,6 +307,7 @@ export default function VideoPlayer({ title, sources, onPlaybackError }) {
               <div
                 className="dramabox-video-frame"
                 style={{ aspectRatio, maxHeight: "72vh" }}
+                ref={frameRef}
               >
                 <PlyrVideo
                   source={plyrSource}

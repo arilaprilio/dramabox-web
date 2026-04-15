@@ -24,12 +24,19 @@ export default function DramaDetailClient({ id, initialDrama }) {
   const [loadingVideo, setLoadingVideo] = useState(false);
   const [videoError, setVideoError] = useState(null);
   const [sources, setSources] = useState([]);
+  const [endBehavior, setEndBehavior] = useState("next");
 
   const episodeCount = drama?.episode_count || 0;
   const episodes = useMemo(() => {
     if (!episodeCount || episodeCount < 1) return [];
     return Array.from({ length: episodeCount }, (_, i) => i + 1);
   }, [episodeCount]);
+
+  const prevEpisode = selectedEpisode && selectedEpisode > 1 ? selectedEpisode - 1 : null;
+  const nextEpisode =
+    selectedEpisode && episodeCount && selectedEpisode < episodeCount
+      ? selectedEpisode + 1
+      : null;
 
   useEffect(() => {
     if (!id) return;
@@ -182,6 +189,14 @@ export default function DramaDetailClient({ id, initialDrama }) {
             <VideoPlayer
               title={`${drama.title} — Episode ${selectedEpisode}`}
               sources={sources}
+              onEnded={() => {
+                if (loadingVideo) return;
+                if (endBehavior === "next" && nextEpisode) {
+                  handleSelectEpisode(nextEpisode);
+                } else if (endBehavior === "prev" && prevEpisode) {
+                  handleSelectEpisode(prevEpisode);
+                }
+              }}
               onPlaybackError={() =>
                 setVideoError(
                   "Video gagal diputar. Coba pilih resolusi lain atau muat ulang halaman."
@@ -202,6 +217,47 @@ export default function DramaDetailClient({ id, initialDrama }) {
               description="Klik salah satu episode di sebelah kiri."
             />
           )}
+
+          {selectedEpisode ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <label
+                  className="text-xs font-medium text-muted"
+                  htmlFor="endBehavior"
+                >
+                  Saat selesai
+                </label>
+                <select
+                  id="endBehavior"
+                  value={endBehavior}
+                  onChange={(e) => setEndBehavior(e.target.value)}
+                  className="rounded-xl border border-border bg-background/40 px-3 py-2 text-sm text-foreground outline-none focus:ring-4 focus:ring-ring/40"
+                >
+                  <option value="none">Tidak otomatis</option>
+                  <option value="prev">Ke episode sebelumnya</option>
+                  <option value="next">Ke episode berikutnya</option>
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => prevEpisode && handleSelectEpisode(prevEpisode)}
+                disabled={!prevEpisode || loadingVideo}
+                className="inline-flex items-center justify-center rounded-xl border border-border bg-surface px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Sebelumnya
+              </button>
+
+              <button
+                type="button"
+                onClick={() => nextEpisode && handleSelectEpisode(nextEpisode)}
+                disabled={!nextEpisode || loadingVideo}
+                className="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Berikutnya
+              </button>
+            </div>
+          ) : null}
         </div>
       </section>
     </div>
