@@ -1,0 +1,125 @@
+@import "tailwindcss";
+@import "plyr/dist/plyr.css";
+
+:root {
+  /* Dominan biru tua, gaya platform streaming modern */
+  --background: #050b1a;
+  --foreground: #e7eefc;
+  --muted: #a8bedf;
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-2: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.12);
+  --ring: rgba(96, 165, 250, 0.6);
+
+  --brand-50: #eff6ff;
+  --brand-100: #dbeafe;
+  --brand-200: #bfdbfe;
+  --brand-300: #93c5fd;
+  --brand-400: #60a5fa;
+  --brand-500: #3b82f6;
+  --brand-600: #2563eb;
+  --brand-700: #1d4ed8;
+  --brand-800: #1e40af;
+  --brand-900: #1e3a8a;
+  --brand-950: #0b1a44;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+  --color-brand-950: var(--brand-950);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  min-height: 100%;
+}
+
+::selection {
+  background: rgba(96, 165, 250, 0.35);
+}
+
+/* Scrollbar halus (opsional) */
+@supports selector(::-webkit-scrollbar) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.35);
+    border-radius: 999px;
+    border: 2px solid rgba(0, 0, 0, 0);
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+  }
+}
+
+/* Plyr theme overrides (modern, youth-friendly, dark) */
+.plyr {
+  --plyr-color-main: var(--brand-500);
+  --plyr-font-family: var(--font-geist-sans);
+  --plyr-control-radius: 12px;
+  --plyr-control-icon-size: 18px;
+  --plyr-control-spacing: 10px;
+  --plyr-video-control-background: rgba(0, 0, 0, 0.55);
+  --plyr-video-control-background-hover: rgba(0, 0, 0, 0.7);
+  --plyr-range-fill-background: var(--brand-500);
+}
+
+.plyr__control--overlaid {
+  background: rgba(37, 99, 235, 0.25);
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.25);
+}
+
+.plyr__control--overlaid:hover {
+  background: rgba(37, 99, 235, 0.35);
+}
+
+/* Make portrait video feel contained and not super tall */
+.dramabox-player .plyr__video-wrapper {
+  border-radius: 16px;
+}
+
+/* Let our outer frame control sizing; ensure video is not cropped */
+.dramabox-video-frame {
+  width: 100%;
+  background: #000;
+}
+
+.dramabox-player .plyr,
+.dramabox-player .plyr__video-wrapper {
+  height: 100%;
+}
+
+.dramabox-player .plyr__video-wrapper {
+  padding-bottom: 0 !important;
+}
+
+.dramabox-player video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain;
+  background: #000;
+}
