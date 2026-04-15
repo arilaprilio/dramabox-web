@@ -7,14 +7,40 @@ const PlyrVideo = dynamic(() => import("plyr-react").then((m) => m.Plyr), {
   ssr: false,
 });
 
-export default function VideoPlayer({ title, sources, onPlaybackError, onEnded }) {
+export default function VideoPlayer({
+  title,
+  sources,
+  isLoading = false,
+  onPlaybackError,
+  onEnded,
+}) {
   const hostRef = useRef(null);
   const frameRef = useRef(null);
+  const plyrRef = useRef(null);
+  const restoreFullscreenRef = useRef(false);
+  const stablePlyrSourceRef = useRef(null);
+  const appliedUrlRef = useRef(null);
   const [selectedQuality, setSelectedQuality] = useState(null);
   const [isSwitching, setIsSwitching] = useState(false);
   const [resume, setResume] = useState(null);
   const [aspectRatio, setAspectRatio] = useState("16 / 9");
   const lastTapRef = useRef({ time: 0, x: 0 });
+
+  const isPlayerFullscreen = () => {
+    try {
+      const plyr = plyrRef.current?.plyr;
+      if (typeof plyr?.fullscreen?.active === "boolean") {
+        return plyr.fullscreen.active;
+      }
+    } catch {
+      // ignore
+    }
+
+    const fsEl =
+      typeof document !== "undefined" ? document.fullscreenElement : null;
+    const host = hostRef.current;
+    return !!fsEl && !!host && host.contains(fsEl);
+  };
 
   const sorted = useMemo(() => {
     const safe = Array.isArray(sources) ? sources : [];
@@ -113,11 +139,18 @@ export default function VideoPlayer({ title, sources, onPlaybackError, onEnded }
       onEnded?.();
     };
 
-    const handleEnded = () => fireEnded();
+    const handleEnded = () => {
+      // Simpan status fullscreen agar bisa dipulihkan setelah pindah source.
+      restoreFullscreenRef.current = isPlayerFullscreen();
+      fireEnded();
+    };
     const handlePause = () => {
       const video = currentVideo;
       if (!video) return;
-      if (video.ended) fireEnded();
+      if (video.ended) {
+        restoreFullscreenRef.current = isPlayerFullscreen();
+        fireEnded();
+      }
     };
     const handlePlay = () => {
       endFired = false;
@@ -201,7 +234,59 @@ export default function VideoPlayer({ title, sources, onPlaybackError, onEnded }
     };
   }, [selectedSource?.url, title]);
 
+  // IMPORTANT:
+  // `plyr-react` akan destroy & instantiate ulang Plyr saat prop `source` berubah.
+  // Itu biasanya membuat browser keluar fullscreen.
+  // Jadi: set `source` hanya SEKALI, lalu update URL video dengan mengganti `video.src`.
+  useEffect(() => {
+    if (!stablePlyrSourceRef.current && plyrSource) {
+      stablePlyrSourceRef.current = plyrSource;
+    }
+  }, [plyrSource]);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    const desiredUrl = selectedSource?.url;
+    if (!frame || !desiredUrl) return;
+
+    const applyToVideo = () => {
+      const video = frame.querySelector("video");
+      if (!video) return false;
+
+      // Hindari reload berulang untuk URL yang sama.
+      if (appliedUrlRef.current === desiredUrl) return true;
+
+      const current = video.currentSrc || video.src;
+      if (current === desiredUrl) {
+        appliedUrlRef.current = desiredUrl;
+        return true;
+      }
+
+      try {
+        video.src = desiredUrl;
+        video.load();
+      } catch {
+        // ignore
+      } finally {
+        appliedUrlRef.current = desiredUrl;
+      }
+
+      return true;
+    };
+
+    // Coba langsung; kalau <video> belum ada (dynamic import), tunggu via observer.
+    if (applyToVideo()) return;
+
+    const observer = new MutationObserver(() => {
+      if (applyToVideo()) observer.disconnect();
+    });
+    observer.observe(frame, { childList: true, subtree: true });
+
+    return () => observer.disconnect();
+  }, [selectedSource?.url]);
+
   async function handleQualityChange(newQuality) {
+    if (isLoading) return;
     setIsSwitching(true);
     try {
       const next = sorted.find((s) => s.quality === newQuality);
@@ -209,6 +294,9 @@ export default function VideoPlayer({ title, sources, onPlaybackError, onEnded }
         setSelectedQuality(newQuality);
         return;
       }
+
+      // Kalau lagi fullscreen, coba pertahankan setelah source berganti.
+      restoreFullscreenRef.current = isPlayerFullscreen();
 
       const media = hostRef.current?.querySelector("video");
       const prevTime = media?.currentTime || 0;
@@ -229,6 +317,19 @@ export default function VideoPlayer({ title, sources, onPlaybackError, onEnded }
       if (media?.videoWidth && media?.videoHeight) {
         setAspectRatio(media.videoHeight > media.videoWidth ? "9 / 16" : "16 / 9");
       }
+
+      // Jika baru pindah episode saat fullscreen, coba masuk lagi.
+      if (restoreFullscreenRef.current) {
+        restoreFullscreenRef.current = false;
+        try {
+          const plyr = plyrRef.current?.plyr;
+          if (plyr?.fullscreen && !plyr.fullscreen.active) {
+            plyr.fullscreen.enter();
+          }
+        } catch {
+          // ignore (browser bisa menolak tanpa user gesture)
+        }
+      }
       return;
     }
 
@@ -248,6 +349,18 @@ export default function VideoPlayer({ title, sources, onPlaybackError, onEnded }
     } finally {
       setResume(null);
       setIsSwitching(false);
+
+      if (restoreFullscreenRef.current) {
+        restoreFullscreenRef.current = false;
+        try {
+          const plyr = plyrRef.current?.plyr;
+          if (plyr?.fullscreen && !plyr.fullscreen.active) {
+            plyr.fullscreen.enter();
+          }
+        } catch {
+          // ignore
+        }
+      }
     }
   }
 
@@ -268,7 +381,11 @@ export default function VideoPlayer({ title, sources, onPlaybackError, onEnded }
               {title}
             </div>
             <div className="text-xs text-muted">
-              {isSwitching ? "Mengganti resolusi…" : ""}
+              {isLoading
+                ? "Memuat episode…"
+                : isSwitching
+                  ? "Mengganti resolusi…"
+                  : ""}
             </div>
           </div>
 
@@ -280,7 +397,8 @@ export default function VideoPlayer({ title, sources, onPlaybackError, onEnded }
               id="quality"
               value={selectedSource.quality}
               onChange={(e) => handleQualityChange(Number(e.target.value))}
-              className="rounded-xl border border-border bg-background/40 px-3 py-2 text-sm text-foreground outline-none focus:ring-4 focus:ring-ring/40"
+              disabled={isLoading || isSwitching}
+              className="rounded-xl border border-border bg-background/40 px-3 py-2 text-sm text-foreground outline-none focus:ring-4 focus:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {sorted.map((s) => (
                 <option key={s.quality} value={s.quality}>
@@ -305,12 +423,13 @@ export default function VideoPlayer({ title, sources, onPlaybackError, onEnded }
           <div className="w-full max-w-[520px]">
             <div className="overflow-hidden rounded-2xl bg-black">
               <div
-                className="dramabox-video-frame"
+                className="dramabox-video-frame relative"
                 style={{ aspectRatio, maxHeight: "72vh" }}
                 ref={frameRef}
               >
                 <PlyrVideo
-                  source={plyrSource}
+                  ref={plyrRef}
+                  source={stablePlyrSourceRef.current}
                   options={plyrOptions}
                   onLoadedMetadata={handleLoadedMetadata}
                   onError={() => {
@@ -318,6 +437,14 @@ export default function VideoPlayer({ title, sources, onPlaybackError, onEnded }
                     onPlaybackError?.();
                   }}
                 />
+
+                {isLoading ? (
+                  <div className="absolute inset-0 grid place-items-center bg-black/40">
+                    <div className="rounded-xl border border-border bg-surface/90 px-4 py-3 text-sm font-semibold text-foreground">
+                      Memuat episode…
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>

@@ -71,7 +71,8 @@ export default function DramaDetailClient({ id, initialDrama }) {
     setSelectedEpisode(episode);
     setLoadingVideo(true);
     setVideoError(null);
-    setSources([]);
+    // Jangan kosongkan sources saat loading, supaya player tidak unmount.
+    // Ini membantu mempertahankan fullscreen saat pindah episode.
 
     try {
       const res = await getChapterVideo({ bookId: id, episode });
@@ -79,10 +80,13 @@ export default function DramaDetailClient({ id, initialDrama }) {
       const normalized = normalizeSources(chapter?.stream_url);
       if (!normalized.length) {
         setVideoError("Video tidak tersedia untuk episode ini.");
+        setSources([]);
+        return;
       }
       setSources(normalized);
     } catch (err) {
       setVideoError(err?.message || "Gagal memuat video. Silakan coba lagi.");
+      // Jika sudah ada video sebelumnya, biarkan tetap tampil agar fullscreen tidak keluar.
     } finally {
       setLoadingVideo(false);
     }
@@ -183,40 +187,49 @@ export default function DramaDetailClient({ id, initialDrama }) {
         <div className="space-y-4">
           <h2 className="text-lg font-semibold">Pemutar video</h2>
 
-          {loadingVideo ? (
-            <LoadingSkeleton variant="player" />
-          ) : sources.length ? (
-            <VideoPlayer
-              title={`${drama.title} — Episode ${selectedEpisode}`}
-              sources={sources}
-              onEnded={() => {
-                if (loadingVideo) return;
-                if (endBehavior === "next" && nextEpisode) {
-                  handleSelectEpisode(nextEpisode);
-                } else if (endBehavior === "prev" && prevEpisode) {
-                  handleSelectEpisode(prevEpisode);
+          {selectedEpisode ? (
+            sources.length ? (
+              <VideoPlayer
+                title={`${drama.title} — Episode ${selectedEpisode}`}
+                sources={sources}
+                isLoading={loadingVideo}
+                onEnded={() => {
+                  if (loadingVideo) return;
+                  if (endBehavior === "next" && nextEpisode) {
+                    handleSelectEpisode(nextEpisode);
+                  } else if (endBehavior === "prev" && prevEpisode) {
+                    handleSelectEpisode(prevEpisode);
+                  }
+                }}
+                onPlaybackError={() =>
+                  setVideoError(
+                    "Video gagal diputar. Coba pilih resolusi lain atau muat ulang halaman."
+                  )
                 }
-              }}
-              onPlaybackError={() =>
-                setVideoError(
+              />
+            ) : loadingVideo ? (
+              <LoadingSkeleton variant="player" />
+            ) : (
+              <ErrorState
+                message={
+                  videoError ||
                   "Video gagal diputar. Coba pilih resolusi lain atau muat ulang halaman."
-                )
-              }
-            />
-          ) : selectedEpisode ? (
-            <ErrorState
-              message={
-                videoError ||
-                "Video gagal diputar. Coba pilih resolusi lain atau muat ulang halaman."
-              }
-              onRetry={() => handleSelectEpisode(selectedEpisode)}
-            />
+                }
+                onRetry={() => handleSelectEpisode(selectedEpisode)}
+              />
+            )
           ) : (
             <EmptyState
               title="Pilih episode untuk mulai menonton"
               description="Klik salah satu episode di sebelah kiri."
             />
           )}
+
+          {selectedEpisode && videoError && sources.length ? (
+            <div className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-muted">
+              {videoError}
+            </div>
+          ) : null}
 
           {selectedEpisode ? (
             <div className="flex flex-wrap items-center justify-between gap-3">
